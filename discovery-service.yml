@@ -26,12 +26,12 @@ eureka:
     register-with-eureka: false
     # A standalone registry should not fetch another registry.
     fetch-registry: false
-    # Is mandatory only if we are having multiple service registries
-    service-url:
-      defaultZone: http://${eureka.instance.hostname}:${server.port}/eureka/
-  server:
+    # Below service-url, server are mandatory only if we are having multiple service registries
+    #service-url:
+      #defaultZone: http://${eureka.instance.hostname}:${server.port}/eureka/
+  #server:
     # Avoids noisy peer-replication warnings for a single-node production-style setup.
-    wait-time-in-ms-when-sync-empty: 0
+    #wait-time-in-ms-when-sync-empty: 0
 
 # Not mandatory
 management:
