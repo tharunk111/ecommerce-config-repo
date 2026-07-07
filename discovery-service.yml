@@ -1,14 +1,83 @@
+# Application identity used by Eureka, Actuator, logs, and service metadata.
 spring:
   application:
     name: discovery-service
 
+  lifecycle:
+    # Allows in-flight requests to finish before the application shuts down. Not Mandatory.
+    timeout-per-shutdown-phase: 30s
+
+# Eureka servers conventionally run on 8761.
 server:
   port: 8761
+  shutdown: graceful
 
 eureka:
+  instance:
+    # Stable hostname advertised to Eureka clients. localhost for now, in aws it can be something like discovery.instance.company.com
+    hostname: localhost
+    # Adds useful metadata to the Eureka instance page and registry payload. Not Mandatory.
+    metadata-map:
+      application: discovery-service
+      role: service-discovery
+      java-version: "21"
   client:
+    # This application is the registry, so it should not register itself.
     register-with-eureka: false
+    # A standalone registry should not fetch another registry.
     fetch-registry: false
-
+    # Below service-url, server are mandatory only if we are having multiple service registries
+    service-url:
+      defaultZone: http://${eureka.instance.hostname}:${server.port}/eureka/
   server:
+    # Avoids noisy peer-replication warnings for a single-node production-style setup.
+    wait-time-in-ms-when-sync-empty: 0
+    # Below is mandatory
     enable-self-preservation: true
+
+# Not mandatory
+management:
+  endpoints:
+    web:
+      exposure:
+        # Includes operational endpoints that are useful for platform monitoring.
+        include: health,info,metrics,prometheus,loggers,env
+  endpoint:
+    health:
+      # Shows component-level health details to authenticated or local operators.
+      show-details: always
+      show-components: always
+      probes:
+        # Enables liveness/readiness groups for orchestrators such as Kubernetes.
+        enabled: true
+    info:
+      enabled: true
+  info:
+    env:
+      # Allows the info.* properties below to appear on /actuator/info.
+      enabled: true
+  health:
+    readinessstate:
+      enabled: true
+    livenessstate:
+      enabled: true
+
+info:
+  app:
+    name: discovery-service
+    description: Eureka Discovery Server for the ecommerce platform.
+    version: 0.0.1-SNAPSHOT
+    java-version: "21"
+    spring-cloud: Netflix Eureka Server
+
+logging:
+  level:
+    # Keep application logs clear while still surfacing Eureka registry activity.
+    root: INFO
+    com.ecommerce.discovery_service: INFO
+    com.netflix.eureka: INFO
+    com.netflix.discovery: WARN
+    org.springframework.cloud.netflix.eureka: INFO
+  pattern:
+    # Adds timestamp, level, service name, and logger for production log aggregation.
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [${spring.application.name}] [%thread] %logger{36} - %msg%n"
