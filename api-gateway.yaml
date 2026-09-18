@@ -1,0 +1,114 @@
+spring:
+  application:
+    name: api-gateway
+
+  cloud:
+    gateway:
+      server:
+        webmvc:
+          routes:
+            # ---- USER-SERVICE -------------------------------------------------
+            # Downstream mappings are /api/v1/users/** (AuthController + UserController),
+            # so the incoming path is forwarded unchanged: no StripPrefix / RewritePath.
+            - id: user-service
+              uri: lb://USER-SERVICE
+              predicates:
+                - Path=/api/v1/users/**
+
+            # user-service ConnectivityController - diagnostics endpoint, kept on its own
+            # route so it can be removed independently of the main user route.
+            - id: user-service-connectivity
+              uri: lb://USER-SERVICE
+              predicates:
+                - Path=/api/v1/connectivity/**
+
+            # ---- PRODUCT-SERVICE ----------------------------------------------
+            # Downstream mapping is /api/v1/products/** - forwarded unchanged.
+            - id: product-service
+              uri: lb://PRODUCT-SERVICE
+              predicates:
+                - Path=/api/v1/products/**
+
+            # ---- ORDER-SERVICE ------------------------------------------------
+            # Downstream mapping is /api/v1/orders/** - forwarded unchanged.
+            - id: order-service
+              uri: lb://ORDER-SERVICE
+              predicates:
+                - Path=/api/v1/orders/**
+
+server:
+  port: 8080
+
+# JWT resource-server configuration.
+# Property names deliberately mirror user-service's existing app.jwt.* block so both
+# services describe the same token in the same vocabulary. The Gateway only verifies
+# tokens, so only the public half of the key pair and the issuer appear here.
+#
+# NOTE: spring.security.oauth2.resourceserver.jwt.issuer-uri is intentionally NOT used.
+# In Spring Boot 4.1 that property takes precedence over public-key-location and makes
+# the decoder resolve itself through OIDC discovery over HTTP; user-service publishes no
+# discovery document or JWKS endpoint, so every token would be rejected. JwtDecoderConfig
+# in the Gateway builds the decoder from these two values instead.
+app:
+  jwt:
+    # A public key is not a secret. The file ships on the Gateway classpath at
+    # api-gateway/src/main/resources/certs/public.pem and MUST stay byte-identical to
+    # user-service/src/main/resources/certs/public.pem. Rotate both together.
+    public-key-location: classpath:certs/public.pem
+    # Must equal user-service's app.jwt.issuer.
+    issuer: user-service
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka
+    # Register so other services can find the Gateway, and fetch the registry so
+    # lb://USER-SERVICE, lb://PRODUCT-SERVICE and lb://ORDER-SERVICE resolve.
+    register-with-eureka: true
+    fetch-registry: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Only health and info. spring-cloud-gateway-server-webmvc ships no "gateway"
+        # actuator endpoint (that one is WebFlux-only), and nothing else is exposed so no
+        # env/configprops/beans data leaks through the public port.
+        include: health,info
+  endpoint:
+    health:
+      show-details: when-authorized
+
+# No logging levels are overridden: Spring Boot's INFO default already reports route
+# registration at startup, and the Gateway logs rejected requests and unavailable
+# downstreams itself. Never turn on request/header logging here - it would write
+# Authorization headers and bearer tokens to disk. For local troubleshooting only,
+# uncomment:
+#
+# logging:
+#   level:
+#     com.ecommerce.api_gateway: DEBUG
+#     org.springframework.cloud.gateway.server.mvc: DEBUG
+#     org.springframework.cloud.loadbalancer: DEBUG
+
+# ---------------------------------------------------------------------------
+# CORS is intentionally NOT enabled.
+#
+# No service in this project configures CORS today and the repository contains no
+# browser client, so enabling it now would only widen the attack surface for no
+# benefit. Note also that the globalcors properties found in most Gateway examples
+# belong to the WebFlux Gateway; this Gateway is the servlet (webmvc) variant, so CORS
+# there is a Spring Security / Spring MVC concern, not a Gateway property.
+#
+# When a browser front end is added, add a CorsConfigurationSource bean in the Gateway
+# and enable it with http.cors(...) in SecurityConfig, driven by a property such as:
+#
+# app:
+#   cors:
+#     allowed-origins:
+#       - http://localhost:3000
+#
+# List real origins explicitly. "*" combined with credentials is rejected by browsers,
+# and a wildcard origin lets any site drive authenticated calls through the Gateway -
+# never ship one to production.
+# ---------------------------------------------------------------------------
